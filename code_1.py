@@ -74,14 +74,15 @@ while True:
 	now = time.monotonic()
 	game.set_time(now)
 	game.handle_selection(game.process_keys())
-	audio.handle_audio_for_state(state=game.state, mixer=mixer)
 	game.process_blinks()
 
-	if game.state == game_engine.WIN and game.processing_complete:
-		t_end = time.time() + 4
-		while time.time() < t_end:
-			rainbow.splash(game)
-		game.reset_all()
+	if game.processing_complete:
+		audio.handle_audio_for_state(state=game.state, mixer=mixer)
+		if game.state == game_engine.WIN:
+			t_end = time.time() + 4
+			while time.time() < t_end:
+				rainbow.splash(game)
+			game.reset_all()
 
 	# remaining = [(x, y) for x in range(8) for y in range(4)]
 

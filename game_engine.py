@@ -126,7 +126,7 @@ class GameEngine(adafruit_trellism4.TrellisM4Express):
 
 		self.pixel_meta[key].update(PIXEL_BLINK_INIT)
 		if self.pixel_meta[key][P_MATCHED]:
-			self.pixels[key] = self.pixel_meta[key][P_COLOR]
+			self.pixels[key] = WHITE
 
 	def __reset_pixel(self, key, values = None):
 		if key is None:
