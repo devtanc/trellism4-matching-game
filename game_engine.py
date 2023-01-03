@@ -182,6 +182,8 @@ class GameEngine(adafruit_trellism4.TrellisM4Express):
 				# Match found!
 				pixel_1[P_MATCHED] = True
 				pixel_2[P_MATCHED] = True
+				pixel_1[P_BLINK_ON_COLOR] = pixel_1[P_COLOR]
+				pixel_2[P_BLINK_ON_COLOR] = pixel_2[P_COLOR]
 				self.blink_pixels([key, self.selected], blinks)
 				self.selected = None
 				self.increment_found_pairs()
