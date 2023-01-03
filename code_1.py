@@ -7,15 +7,13 @@ import random
 import rainbow
 import audio_engine
 import game_engine
-import adafruit_trellism4
 
-DEMO = -1
 WINNING_PAIRS = 16
 COLORS = [0xFF0000, 0xFFFF00, 0x00FF00, 0x00FFFF, 0x0000FF, 0xFF00FF]
 
-trellis = adafruit_trellism4.TrellisM4Express(rotation=0)
-trellis.pixels.brightness = 0.2
-trellis.pixels.fill(0)
+game = game_engine.GameEngine(rotation=0)
+game.pixels.brightness = 0.2
+game.pixels.fill(0)
 
 demo_mode_enabled = True
 pixel_colors = [None] * 32
@@ -25,7 +23,7 @@ key_pressed = None
 mixer = None
 
 audio = audio_engine.AudioEngine(state_to_path_relationships={
-		DEMO: "/opening.wav",
+		game_engine.DEMO: "/opening.wav",
 		game_engine.PLAYING: "/playing_1.wav",
 		game_engine.HALFWAY: "/playing_2.wav",
 		game_engine.NEAR_WIN: "/playing_3.wav",
@@ -37,8 +35,6 @@ audio = audio_engine.AudioEngine(state_to_path_relationships={
 audio_out = audio.initialize_audio()
 mixer = audio.initialize_mixer()
 audio_out.play(mixer)
-
-game = game_engine.GameEngine()
 
 # def handle_key(key, _found_pairs, _first_pixel):
 #	 if key is None:
@@ -72,17 +68,20 @@ game = game_engine.GameEngine()
 #			 return _found_pairs, key
 #	 return _found_pairs, None
 
-trellis.pixels.fill(0x000000)
+game.pixels.fill(0)
 
 while True:
 	now = time.monotonic()
 	game.set_time(now)
-	key_pressed = game.process_keys(set(trellis.pressed_keys))
-	game.handle_selection(key_pressed, 40)
+	game.handle_selection(game.process_keys())
+	audio.handle_audio_for_state(state=game.state, mixer=mixer)
+	game.process_blinks()
 
-	updates = game.process_blinks(pixel_state=trellis.pixels)
-	for key, color in updates:
-		trellis.pixels[key] = color
+	if game.state == game_engine.WIN and game.processing_complete:
+		t_end = time.time() + 4
+		while time.time() < t_end:
+			rainbow.splash(game)
+		game.reset_all()
 
 	# remaining = [(x, y) for x in range(8) for y in range(4)]
 
@@ -116,6 +115,4 @@ while True:
 	# 		 audio.handle_audio_for_state(state, mixer)
 	# 		 print("%d : %d" % (audio.get_state(), state))
 
-	# 	 t_end = time.time() + 4
-	# 	 while time.time() < t_end:
-	# 		 rainbow.splash(trellis)
+	

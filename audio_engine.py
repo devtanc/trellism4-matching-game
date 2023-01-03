@@ -2,6 +2,7 @@ import board
 import audioio
 import audiocore
 import audiomixer
+from logger_builder import logger
 
 class AudioEngine:
 	root_path = ''
@@ -15,7 +16,7 @@ class AudioEngine:
 	bits_per_sample = None
 	sample_rate = None
 
-	def __get_path(self, state = None):
+	def __get_path(self, state):
 		return self.root_path + self.paths[state]
 
 	def __init__(self, state_to_path_relationships, root_audio_path):
@@ -25,19 +26,21 @@ class AudioEngine:
 			self.root_path = root_audio_path
 		self.voices = 2
 		self.paths = state_to_path_relationships
-		with open(self.__get_path(-1), 'rb') as file:
+		# TODO: FIX THIS HARCODED VALUE
+		with open(self.__get_path(0), 'rb') as file:
 			wav = audiocore.WaveFile(file)
 			
 			self.channel_count = wav.channel_count
 			self.bits_per_sample = wav.bits_per_sample
 			self.sample_rate = wav.sample_rate
 
-			print('%d channels, %d bits per sample, %d Hz sample rate ' %
+			logger.info('%d channels, %d bits per sample, %d Hz sample rate ' %
 				(wav.channel_count, wav.bits_per_sample, wav.sample_rate))
 
 			file.close()
 
-		self.correct_audio_file = open(self.__get_path(4), 'rb')
+		# TODO: FIX THIS HARCODED VALUE
+		self.correct_audio_file = open(self.__get_path(5), 'rb')
 		self.correct_wav_data = audiocore.WaveFile(self.correct_audio_file)
 
 	def __del__(self):
@@ -69,18 +72,21 @@ class AudioEngine:
 	def stop_playing_sample(self, mixer):
 		if self.current_bg_audio is None:
 			return None
-		print("Closing file: " + self.current_bg_audio['path'])
+		logger.debug("Closing file: %s", self.current_bg_audio['path'])
 		mixer.stop_voice(self.current_bg_audio['voice'])
 		self.current_bg_audio['file'].close()
 
 	def handle_audio_for_state(self, state, mixer):
+		if state is None or self.currently_playing_state == state:
+			return
 		self.stop_playing_sample(mixer)
 
 		voice = 0
-		loop = state is not COMPLETE
+		# TODO: FIX THIS HARCODED VALUE
+		loop = state is not 4
 
 		path = self.__get_path(state)
-		print("Opening file: " + path)
+		logger.debug("Opening file: %s", path)
 
 		file = open(path, 'rb')
 		wav = audiocore.WaveFile(file)
