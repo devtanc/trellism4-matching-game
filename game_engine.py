@@ -1,6 +1,9 @@
 import random
+import audiomixer
+import audio_engine as audio_engine_lib
 import adafruit_trellism4
 from logger_builder import logger
+from math import ceil
 
 [
 	DEMO,
@@ -8,8 +11,9 @@ from logger_builder import logger
 	HALFWAY,
 	NEAR_WIN,
 	WIN,
+	SETTINGS,
 	CORRECT
-] = range(6)
+] = range(7)
 
 # LED COLORS
 OFF = 0x000000
@@ -39,8 +43,20 @@ WHITE = 0xFFFFFF
 
 # PIXEL HELD ACTIONS
 [
-	S_TOGGLE_COLORS,
+	S_TOGGLE_SETTINGS,
 ] = range(1)
+
+# SETTINGS
+TOP_ROW = 0
+BRIGHTNESS_ROW = 1
+INCREMENT_BRIGHTNESS = (2,BRIGHTNESS_ROW)
+DECREMENT_BRIGHTNESS = (0,BRIGHTNESS_ROW)
+VOICE_1_ROW = 2
+INCREMENT_VOICE_1 = (2,VOICE_1_ROW)
+DECREMENT_VOICE_1 = (0,VOICE_1_ROW)
+VOICE_2_ROW = 3
+INCREMENT_VOICE_2 = (2,VOICE_2_ROW)
+DECREMENT_VOICE_2 = (0,VOICE_2_ROW)
 
 CORRECT_BLINKS = 3
 
@@ -76,8 +92,11 @@ class GameEngine(adafruit_trellism4.TrellisM4Express):
 
 	COLORS = [RED, YELLOW, GREEN, CYAN, BLUE, VIOLET]
 
+	audio_engine: audio_engine_lib.AudioEngine = None
+	audio_mixer: audiomixer.Mixer = None
+
 	state = DEMO
-	trellis = None
+	temp_state = None
 	pixel_meta = {}
 	selected = None
 	found_pairs = 0
@@ -87,8 +106,11 @@ class GameEngine(adafruit_trellism4.TrellisM4Express):
 	last_held_keys = set()
 	now = -1
 
-	def __init__(self, rotation):
+	def __init__(self, rotation, audio_mixer, audio_engine):
 		super().__init__(rotation=rotation)
+		self.audio_mixer = audio_mixer
+		self.audio_engine = audio_engine
+		self.pixels.brightness = 0.8
 		if self.NUMBER_OF_PIXELS % 2 == 1:
 			raise RuntimeError('Must be an even number of pixels')
 		self.initialize_grid()
@@ -105,7 +127,7 @@ class GameEngine(adafruit_trellism4.TrellisM4Express):
 			self.__reset_pixel(pop_random_from_list(coords), pixel)
 			self.__reset_pixel(pop_random_from_list(coords), pixel)
 		self.__reset_held_pixel((0,0))
-		self.pixel_meta[(0,0)][P_HOLD_ACTION] = S_TOGGLE_COLORS
+		self.pixel_meta[(0,0)][P_HOLD_ACTION] = S_TOGGLE_SETTINGS
 
 	def set_time(self, now):
 		self.now = now
@@ -139,6 +161,41 @@ class GameEngine(adafruit_trellism4.TrellisM4Express):
 
 		if values is not None:
 			self.pixel_meta[key].update(values)
+	
+	def __render_game_state(self):
+		self.pixels.fill(0)
+		if self.selected:
+			self.pixels[self.selected] = self.pixel_meta[self.selected][P_COLOR]
+		for key in self.pixel_meta:
+			pixel = self.pixel_meta[key]
+			if pixel[P_MATCHED]:
+				self.pixels[key] = WHITE
+
+	def __render_settings(self):
+		self.pixels.fill(0)
+
+		self.pixels[INCREMENT_BRIGHTNESS] = BLUE
+		self.pixels[DECREMENT_BRIGHTNESS] = BLUE
+		brightness_pixels = self.dec_to_pixels(self.pixels.brightness)
+		self.__display_setting_gauge(BRIGHTNESS_ROW, brightness_pixels, WHITE)
+		
+		self.pixels[INCREMENT_VOICE_1] = WHITE
+		self.pixels[DECREMENT_VOICE_1] = WHITE
+		volume_pixels = self.dec_to_pixels(self.audio_mixer.voice[0].level)
+		self.__display_setting_gauge(VOICE_1_ROW, volume_pixels, YELLOW)
+		
+		self.pixels[INCREMENT_VOICE_2] = WHITE
+		self.pixels[DECREMENT_VOICE_2] = WHITE
+		volume_pixels = self.dec_to_pixels(self.audio_mixer.voice[1].level)
+		self.__display_setting_gauge(VOICE_2_ROW, volume_pixels, YELLOW)
+	
+	def __display_setting_gauge(self, row, pixels, color):
+		upper_bound = 3 + pixels
+		for x in range(3,upper_bound):
+			self.pixels[(x, row)] = color
+
+	def dec_to_pixels(self, percent):
+		return ceil(int(percent * 100) / 20)
 	
 	def reset_all(self):
 		self.initialize_grid()
@@ -187,6 +244,7 @@ class GameEngine(adafruit_trellism4.TrellisM4Express):
 				self.blink_pixels([key, self.selected], blinks)
 				self.selected = None
 				self.increment_found_pairs()
+				self.audio_engine.play_correct_sound(self.audio_mixer)
 			else:
 				# Not a match
 				pixel_1[P_BLINK_ON_COLOR] = pixel_1[P_COLOR]
@@ -280,6 +338,42 @@ class GameEngine(adafruit_trellism4.TrellisM4Express):
 				self.state = PLAYING
 			return list(new_presses)[0]
 
+	def handle_setting_selection(self, key: tuple[int, int]):
+		if key is None:
+			return
+		elif key == INCREMENT_BRIGHTNESS:
+			self.pixels.brightness = min(self.pixels.brightness + 0.2, 1)
+		elif key == DECREMENT_BRIGHTNESS:
+			self.pixels.brightness = max(self.pixels.brightness - 0.2, 0.2)
+		elif key == INCREMENT_VOICE_1:
+			self.audio_mixer.voice[0].level = min(self.audio_mixer.voice[0].level + 0.2, 1)
+		elif key == DECREMENT_VOICE_1:
+			self.audio_mixer.voice[0].level = max(self.audio_mixer.voice[0].level - 0.2, 0.2)
+		elif key == INCREMENT_VOICE_2:
+			self.audio_mixer.voice[1].level = min(self.audio_mixer.voice[1].level + 0.2, 1)
+			self.audio_engine.play_correct_sound(self.audio_mixer)
+		elif key == DECREMENT_VOICE_2:
+			self.audio_mixer.voice[1].level = max(self.audio_mixer.voice[1].level - 0.2, 0.2)
+			self.audio_engine.play_correct_sound(self.audio_mixer)
+		elif key[0] >= 3:
+			abs_percent_value = (key[0] - 2) * 0.2
+			if key[1] == TOP_ROW:
+				return
+			elif key[1] == BRIGHTNESS_ROW:
+				self.pixels.brightness = abs_percent_value
+			elif key[1] == VOICE_1_ROW:
+				self.audio_mixer.voice[0].level = abs_percent_value
+			elif key[1] == VOICE_2_ROW:
+				self.audio_mixer.voice[1].level = abs_percent_value
+		self.__render_settings()
+
 	def handle_pressed_state(self, state):
-		if state == S_TOGGLE_COLORS:
-			self.toggle_show_colors()
+		if state == S_TOGGLE_SETTINGS:
+			if self.state is not SETTINGS:
+				self.temp_state = self.state
+				self.state = SETTINGS
+				self.__render_settings()
+			else:
+				self.state = self.temp_state
+				self.temp_state = None
+				self.__render_game_state()
